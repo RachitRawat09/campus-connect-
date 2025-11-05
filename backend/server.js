@@ -6,9 +6,25 @@ const cors = require("cors");
 const app = express();
 
 // Middleware
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:5173", // Your local development URL
+  "https://campus-connect-gndec.vercel.app", // Your deployed frontend URL
+  "https://campus-connect-gndec.onrender.com", // Add any other deployment URLs
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        var msg =
+          "The CORS policy for this site does not allow access from the specified Origin.";
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
