@@ -42,7 +42,7 @@ async function ensureAdmin() {
     if (!user) {
       const hashed = await bcrypt.hash(password, 10);
       user = await User.create({ name, email, password: hashed, college, isAdmin: true, isVerified: true });
-      console.log('Admin user created:', email);
+      
     } else if (!user.isAdmin) {
       user.isAdmin = true;
       await user.save();
