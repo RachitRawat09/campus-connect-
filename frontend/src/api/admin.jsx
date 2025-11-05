@@ -1,6 +1,8 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_URL = 'http://localhost:8080/api/admin';
+const API_URL = `${
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+}/admin`;
 
 export const getAdminStats = async (token) => {
   const res = await axios.get(`${API_URL}/stats`, {
@@ -9,7 +11,7 @@ export const getAdminStats = async (token) => {
   return res.data;
 };
 
-export const getAdminUsers = async ({ token, limit = 10, search = '' }) => {
+export const getAdminUsers = async ({ token, limit = 10, search = "" }) => {
   const res = await axios.get(`${API_URL}/users`, {
     params: { limit, search },
     headers: { Authorization: `Bearer ${token}` },
@@ -24,7 +26,12 @@ export const getAdminUserById = async (id, token) => {
   return res.data;
 };
 
-export const getAdminListings = async ({ token, search = '', page = 1, pageSize = 20 }) => {
+export const getAdminListings = async ({
+  token,
+  search = "",
+  page = 1,
+  pageSize = 20,
+}) => {
   const res = await axios.get(`${API_URL}/listings`, {
     params: { search, page, pageSize },
     headers: { Authorization: `Bearer ${token}` },
@@ -32,13 +39,10 @@ export const getAdminListings = async ({ token, search = '', page = 1, pageSize 
   return res.data;
 };
 
-export const getAdminComplaints = async ({ token, status = '' }) => {
+export const getAdminComplaints = async ({ token, status = "" }) => {
   const res = await axios.get(`${API_URL}/complaints`, {
     params: { status },
     headers: { Authorization: `Bearer ${token}` },
   });
   return res.data;
 };
-
-
-
