@@ -1,3 +1,10 @@
+console.log("✅ ENV DEBUG:");
+console.log("BRAVO_API_KEY exists:", !!process.env.BRAVO_API_KEY);
+console.log("EMAIL_USER:", process.env.EMAIL_USER);
+console.log("EMAIL_FROM:", process.env.EMAIL_FROM);
+
+
+
 const axios = require("axios");
 const crypto = require("crypto");
 
