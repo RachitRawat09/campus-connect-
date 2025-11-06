@@ -18,6 +18,7 @@ const DEFAULT_FROM =
 const brevoClient = SibApiV3Sdk.ApiClient.instance;
 const apiKey = brevoClient.authentications["api-key"];
 apiKey.apiKey = BREVO_API_KEY;
+
 const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // ================================
@@ -33,18 +34,23 @@ async function sendEmailWithBrevo({ from = DEFAULT_FROM, to, subject, html }) {
       ? { email: from, name: "Campus Connect" }
       : from;
 
-  const sendSmtpEmail = {
+  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail({
     sender: senderEmail,
     to: [{ email: to }],
     subject,
     htmlContent: html,
-  };
+  });
 
   try {
-    await emailApi.sendTransacEmail(sendSmtpEmail);
+    const response = await emailApi.sendTransacEmail(sendSmtpEmail);
     console.log(`✅ Email sent successfully to ${to}`);
+    return true;
   } catch (error) {
-    console.error("❌ Error sending email via Brevo:", error.message);
+    console.error(
+      "❌ Error sending email via Brevo:",
+      error?.response?.body || error?.message || error
+    );
+    return false;
   }
 }
 
@@ -73,18 +79,12 @@ const sendOTPEmail = async (email, otp) => {
       </div>
     `;
 
-    if (BREVO_API_KEY) {
-      await sendEmailWithBrevo({
-        from: DEFAULT_FROM,
-        to: email,
-        subject: "Campus Connect - Email Verification OTP",
-        html,
-      });
-      return true;
-    }
-
-    console.error("BREVO_API_KEY not set; skipping sending OTP email");
-    return false;
+    return await sendEmailWithBrevo({
+      from: DEFAULT_FROM,
+      to: email,
+      subject: "Campus Connect - Email Verification OTP",
+      html,
+    });
   } catch (error) {
     console.error("Error sending OTP email:", error?.message || error);
     return false;
@@ -115,18 +115,12 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       </div>
     `;
 
-    if (BREVO_API_KEY) {
-      await sendEmailWithBrevo({
-        from: DEFAULT_FROM,
-        to: email,
-        subject: "Campus Connect - Password Reset",
-        html,
-      });
-      return true;
-    }
-
-    console.error("BREVO_API_KEY not set; skipping sending reset email");
-    return false;
+    return await sendEmailWithBrevo({
+      from: DEFAULT_FROM,
+      to: email,
+      subject: "Campus Connect - Password Reset",
+      html,
+    });
   } catch (error) {
     console.error("Error sending password reset email:", error?.message || error);
     return false;
