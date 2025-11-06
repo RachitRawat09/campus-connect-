@@ -12,6 +12,7 @@ router.post('/', listingController.createListing); // For now, no auth
 
 // Get all listings
 router.get('/', listingController.getListings);
+router.get('/purchases', authMiddleware, listingController.getPurchasesByUser); 
 
 // Get single listing
 router.get('/:id', listingController.getListingById);
@@ -74,7 +75,6 @@ router.get('/categories', listingController.getCategories);
 router.get('/departments', listingController.getDepartments);
 
 // Get all purchases for a user (protected)
-router.get('/purchases', authMiddleware, listingController.getPurchasesByUser);
 
 // Reviews
 router.post('/:id/reviews', authMiddleware, listingController.addReview);
