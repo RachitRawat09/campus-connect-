@@ -11,9 +11,9 @@ const crypto = require("crypto");
 // ================================
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const DEFAULT_FROM =
-  process.env.EMAIL_FROM ||
-  process.env.EMAIL_USER ||
-  "no-reply@campusconnect.local";
+  
+  process.env.EMAIL_USER || process.env.EMAIL_FROM ||
+  "campusconnect1125@gmail.com";
 
 const brevoClient = SibApiV3Sdk.ApiClient.instance;
 const apiKey = brevoClient.authentications["api-key"];
