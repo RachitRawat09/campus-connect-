@@ -1,9 +1,9 @@
-require("dotenv").config(); // make sure this is at the very top
+require("dotenv").config(); // Must be at the very top
 
 console.log("✅ ENV DEBUG:");
 console.log("BREVO_API_KEY exists:", !!process.env.BREVO_API_KEY);
 console.log("EMAIL_USER:", process.env.EMAIL_USER);
-console.log("EMAIL_FROM:", process.env.EMAIL_FROM);
+console.log("EMAIL_FROM_NAME:", process.env.EMAIL_FROM_NAME);
 
 const SibApiV3Sdk = require("sib-api-v3-sdk");
 const crypto = require("crypto");
@@ -12,9 +12,8 @@ const crypto = require("crypto");
 // Brevo (Sendinblue) Configuration
 // ================================
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const DEFAULT_FROM_EMAIL =
-  "campusconnect1125@gmail.com";
-const DEFAULT_FROM_NAME = "Campus Connect";
+const DEFAULT_FROM_EMAIL = process.env.EMAIL_USER || "campusconnect1125@gmail.com";
+const DEFAULT_FROM_NAME = process.env.EMAIL_FROM_NAME || "Campus Connect";
 
 const brevoClient = SibApiV3Sdk.ApiClient.instance;
 brevoClient.authentications["api-key"].apiKey = BREVO_API_KEY;
@@ -23,17 +22,12 @@ const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 // ================================
 // Send Email via Brevo
 // ================================
-async function sendEmailWithBrevo({
-  fromEmail = DEFAULT_FROM_EMAIL,
-  fromName = DEFAULT_FROM_NAME,
-  to,
-  subject,
-  html,
-}) {
+async function sendEmailWithBrevo({ fromEmail = DEFAULT_FROM_EMAIL, fromName = DEFAULT_FROM_NAME, to, subject, html }) {
   if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY not configured");
+
   if (!fromEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fromEmail)) {
     console.error(
-      "❌ EMAIL ERROR: Sender email is missing or invalid. Set EMAIL_FROM or EMAIL_USER in your .env to a valid, verified Brevo sender email."
+      "❌ EMAIL ERROR: Sender email is missing or invalid. Set EMAIL_USER in your .env to a valid Brevo verified sender email."
     );
     return false;
   }
@@ -46,7 +40,7 @@ async function sendEmailWithBrevo({
   });
 
   try {
-    const response = await emailApi.sendTransacEmail(sendSmtpEmail);
+    await emailApi.sendTransacEmail(sendSmtpEmail);
     console.log(`✅ Email sent successfully to ${to}`);
     return true;
   } catch (error) {
@@ -94,9 +88,7 @@ const sendOTPEmail = async (email, otp) => {
 // Send Password Reset Email
 // ================================
 const sendPasswordResetEmail = async (email, resetToken) => {
-  const resetUrl = `${
-    process.env.FRONTEND_URL || "http://localhost:5173"
-  }/reset-password?token=${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #4F46E5;">Campus Connect</h2>
