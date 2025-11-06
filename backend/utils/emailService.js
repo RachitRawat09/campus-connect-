@@ -1,25 +1,31 @@
 const axios = require("axios");
 const crypto = require("crypto");
 
-// Use Resend (https://resend.com) HTTP API in production.
-// Set RESEND_API_KEY in environment variables to enable sending.
+// Use Bravo Mail API in production.
+// Set BRAVO_API_KEY in environment variables to enable sending.
 // DEFAULT_FROM is used when an explicit from address is not provided.
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const BRAVO_API_KEY = process.env.BRAVO_API_KEY;
 const DEFAULT_FROM =
   process.env.EMAIL_FROM ||
   process.env.EMAIL_USER ||
   "no-reply@campusconnect.local";
 
-async function sendEmailWithResend({ from = DEFAULT_FROM, to, subject, html }) {
-  if (!RESEND_API_KEY) {
-    throw new Error("RESEND_API_KEY not configured");
+async function sendEmailWithBravo({ from = DEFAULT_FROM, to, subject, html }) {
+  if (!BRAVO_API_KEY) {
+    throw new Error("BRAVO_API_KEY not configured");
   }
 
-  const payload = { from, to, subject, html };
+  const payload = {
+    apikey: BRAVO_API_KEY,
+    from: from,
+    to: to,
+    subject: subject,
+    content: html,
+    ishtml: true,
+  };
 
-  return axios.post("https://api.resend.com/emails", payload, {
+  return axios.post("https://api.bravo.io/v1/smtp/mail", payload, {
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
   });
@@ -53,8 +59,8 @@ const sendOTPEmail = async (email, otp) => {
       `,
     };
 
-    if (RESEND_API_KEY) {
-      await sendEmailWithResend({
+    if (BRAVO_API_KEY) {
+      await sendEmailWithBravo({
         from: mailOptions.from || DEFAULT_FROM,
         to: mailOptions.to,
         subject: mailOptions.subject,
@@ -62,7 +68,7 @@ const sendOTPEmail = async (email, otp) => {
       });
       return true;
     }
-    console.error("RESEND_API_KEY not set; skipping sending OTP email");
+    console.error("BRAVO_API_KEY not set; skipping sending OTP email");
     return false;
   } catch (error) {
     console.error("Error sending OTP email:", error?.message || error);
@@ -97,8 +103,8 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       `,
     };
 
-    if (RESEND_API_KEY) {
-      await sendEmailWithResend({
+    if (BRAVO_API_KEY) {
+      await sendEmailWithBravo({
         from: mailOptions.from || DEFAULT_FROM,
         to: mailOptions.to,
         subject: mailOptions.subject,
@@ -107,7 +113,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       return true;
     }
     console.error(
-      "RESEND_API_KEY not set; skipping sending password reset email"
+      "BRAVO_API_KEY not set; skipping sending password reset email"
     );
     return false;
   } catch (error) {
@@ -139,8 +145,8 @@ module.exports = {
                  process.env.FRONTEND_URL || "http://localhost:5173"
                }/messages" target="_blank">Open messages</a> to view and accept the chat request.</p>`,
       };
-      if (RESEND_API_KEY) {
-        await sendEmailWithResend({
+      if (BRAVO_API_KEY) {
+        await sendEmailWithBravo({
           from: mailOptions.from || DEFAULT_FROM,
           to: mailOptions.to,
           subject: mailOptions.subject,
@@ -186,8 +192,8 @@ module.exports = {
           </div>
         `,
       };
-      if (RESEND_API_KEY) {
-        await sendEmailWithResend({
+      if (BRAVO_API_KEY) {
+        await sendEmailWithBravo({
           from: mailOptions.from || DEFAULT_FROM,
           to: mailOptions.to,
           subject: mailOptions.subject,
@@ -195,7 +201,7 @@ module.exports = {
         });
       } else {
         console.error(
-          "RESEND_API_KEY not set; skipping sending rejection email"
+          "BRAVO_API_KEY not set; skipping sending rejection email"
         );
       }
     } catch (error) {
