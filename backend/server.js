@@ -4,6 +4,8 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 
 const app = express();
+const http = require("http");
+const { Server } = require("socket.io");
 
 // Middleware
 const allowedOrigins = [
@@ -107,7 +109,45 @@ connectDB();
 // After DB connects, ensure admin exists
 ensureAdmin();
 
+// Create HTTP server and attach Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST"],
+  },
+});
+
+// Make io globally available for controllers
+global.io = io;
+
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
+
+  socket.on("join", (userId) => {
+    if (!userId) return;
+    socket.join(`user:${userId}`);
+    console.log(`Socket ${socket.id} joined room user:${userId}`);
+  });
+
+  socket.on("joinConversation", (conversationId) => {
+    if (!conversationId) return;
+    socket.join(`conversation:${conversationId}`);
+    console.log(
+      `Socket ${socket.id} joined room conversation:${conversationId}`
+    );
+  });
+
+  socket.on("leaveConversation", (conversationId) => {
+    socket.leave(`conversation:${conversationId}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Socket disconnected:", socket.id);
+  });
+});
+
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

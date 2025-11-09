@@ -1,36 +1,34 @@
 require("dotenv").config(); // Must be at the very top
+const SibApiV3Sdk = require("sib-api-v3-sdk");
+const crypto = require("crypto");
 
 console.log("✅ ENV DEBUG:");
 console.log("BREVO_API_KEY exists:", !!process.env.BREVO_API_KEY);
 console.log("EMAIL_USER:", process.env.EMAIL_USER);
 console.log("EMAIL_FROM_NAME:", process.env.EMAIL_FROM_NAME);
 
-const SibApiV3Sdk = require("sib-api-v3-sdk");
-const crypto = require("crypto");
-
-// ================================
-// Brevo (Sendinblue) Configuration
-// ================================
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const DEFAULT_FROM_EMAIL = process.env.EMAIL_USER || "campusconnect1125@gmail.com";
+const DEFAULT_FROM_EMAIL = process.env.EMAIL_USER;
 const DEFAULT_FROM_NAME = process.env.EMAIL_FROM_NAME || "Campus Connect";
 
+if (!DEFAULT_FROM_EMAIL) {
+  throw new Error(
+    "❌ EMAIL_USER is not set in .env. Please provide a verified Brevo sender email."
+  );
+}
+
+// Brevo client setup
 const brevoClient = SibApiV3Sdk.ApiClient.instance;
 brevoClient.authentications["api-key"].apiKey = BREVO_API_KEY;
 const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
-// ================================
-// Send Email via Brevo
-// ================================
 async function sendEmailWithBrevo({ fromEmail = DEFAULT_FROM_EMAIL, fromName = DEFAULT_FROM_NAME, to, subject, html }) {
   if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY not configured");
 
-  if (!fromEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fromEmail)) {
-    console.error(
-      "❌ EMAIL ERROR: Sender email is missing or invalid. Set EMAIL_USER in your .env to a valid Brevo verified sender email."
-    );
-    return false;
-  }
+  console.log(`📤 Attempting to send email:
+  From: ${fromEmail} (${fromName})
+  To: ${to}
+  Subject: ${subject}`);
 
   const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail({
     sender: { email: fromEmail, name: fromName },
@@ -40,14 +38,12 @@ async function sendEmailWithBrevo({ fromEmail = DEFAULT_FROM_EMAIL, fromName = D
   });
 
   try {
-    await emailApi.sendTransacEmail(sendSmtpEmail);
+    const result = await emailApi.sendTransacEmail(sendSmtpEmail);
     console.log(`✅ Email sent successfully to ${to}`);
-    return true;
+    return result;
   } catch (error) {
-    console.error(
-      "❌ Error sending email via Brevo:",
-      error?.response?.body || error?.message || error
-    );
+    console.error("❌ Error sending email via Brevo:");
+    console.error(error?.response?.body || error?.message || error);
     return false;
   }
 }
@@ -76,8 +72,6 @@ const sendOTPEmail = async (email, otp) => {
   `;
 
   return await sendEmailWithBrevo({
-    fromEmail: DEFAULT_FROM_EMAIL,
-    fromName: DEFAULT_FROM_NAME,
     to: email,
     subject: "Campus Connect - Email Verification OTP",
     html,
@@ -104,8 +98,6 @@ const sendPasswordResetEmail = async (email, resetToken) => {
   `;
 
   return await sendEmailWithBrevo({
-    fromEmail: DEFAULT_FROM_EMAIL,
-    fromName: DEFAULT_FROM_NAME,
     to: email,
     subject: "Campus Connect - Password Reset",
     html,
@@ -113,7 +105,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 };
 
 // ================================
-// Export All
+// Exports
 // ================================
 module.exports = {
   generateOTP,

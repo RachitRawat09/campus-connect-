@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useRef } from "react";
 import { AuthContext } from "../context/AuthContext.jsx";
 import {
   getMessages,
@@ -31,6 +31,7 @@ const Messages = () => {
     description: "",
   });
   const [submittingReport, setSubmittingReport] = useState(false);
+  const socketRef = useRef(null);
 
   const reportTypes = [
     { value: "inappropriate_product", label: "Inappropriate Product" },
@@ -88,6 +89,134 @@ const Messages = () => {
     };
     fetchConversations();
   }, [user, token]);
+
+  // Socket.IO: connect and setup listeners
+  useEffect(() => {
+    if (!user || !token) return;
+    // Determine backend base used by API (strip /api)
+    const apiBase = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const socketUrl = apiBase.replace(/\/api\/?$/, "");
+
+    // Lazy import to avoid SSR issues
+    import("socket.io-client").then(({ io }) => {
+      const socket = io(socketUrl, { auth: { token } });
+      socketRef.current = socket;
+
+      // Join user room
+      const userId = user._id || user.id;
+      if (userId) socket.emit("join", userId);
+
+      // Handlers
+      socket.on("conversation:created", ({ conversation, message }) => {
+        setConversations((prev) => {
+          // prepend if not present
+          const found = prev.find((c) => c._id === conversation._id);
+          if (found)
+            return prev.map((c) =>
+              c._id === conversation._id ? conversation : c
+            );
+          return [conversation, ...prev];
+        });
+      });
+
+      socket.on("message:new", (payload) => {
+        // payload may be message or { message, conversationId }
+        const msg = payload.message || payload;
+        const convId =
+          payload.conversationId || msg.conversation || msg.listing || null;
+
+        // If messages currently displayed belong to same conversation, append
+        if (
+          selectedConversation &&
+          String(selectedConversation._id) ===
+            String(
+              msg.conversation || msg.conversationId || selectedConversation._id
+            )
+        ) {
+          setMessages((m) => [...m, msg]);
+        }
+
+        // Update conversation list lastMessageAt and order
+        setConversations((prev) => {
+          let updated = prev.map((c) => {
+            if (
+              String(c._id) ===
+              String(msg.conversation || convId || selectedConversation?._id)
+            ) {
+              return {
+                ...c,
+                lastMessageAt: new Date().toISOString(),
+                lastMessage: msg.content,
+              };
+            }
+            return c;
+          });
+          // move any updated convo to top
+          updated.sort(
+            (a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt)
+          );
+          return updated;
+        });
+      });
+
+      socket.on("conversation:updated", (conversation) => {
+        setConversations((prev) =>
+          prev.map((c) => (c._id === conversation._id ? conversation : c))
+        );
+        if (
+          selectedConversation &&
+          selectedConversation._id === conversation._id
+        )
+          setSelectedConversation(conversation);
+      });
+
+      socket.on("conversation:rejected", ({ conversationId }) => {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c._id === conversationId ? { ...c, status: "rejected" } : c
+          )
+        );
+        if (selectedConversation && selectedConversation._id === conversationId)
+          setSelectedConversation((s) => ({ ...s, status: "rejected" }));
+      });
+
+      socket.on("sale:requested", ({ conversation }) => {
+        setConversations((prev) =>
+          prev.map((c) => (c._id === conversation._id ? conversation : c))
+        );
+        if (
+          selectedConversation &&
+          selectedConversation._id === conversation._id
+        )
+          setSelectedConversation(conversation);
+      });
+
+      socket.on(
+        "sale:confirmed",
+        ({ conversation, listing, confirmationMessage }) => {
+          // Update conversation and listing state
+          setConversations((prev) =>
+            prev.map((c) => (c._id === conversation._id ? conversation : c))
+          );
+          if (
+            selectedConversation &&
+            selectedConversation._id === conversation._id
+          ) {
+            setSelectedConversation(conversation);
+            // append confirmation message
+            setMessages((m) => [...m, confirmationMessage]);
+          }
+        }
+      );
+
+      return () => {
+        try {
+          socket.disconnect();
+        } catch (e) {}
+        socketRef.current = null;
+      };
+    });
+  }, [user, token, selectedConversation]);
 
   // Fetch messages when conversation is selected
   useEffect(() => {
@@ -329,7 +458,12 @@ const Messages = () => {
                         ? "bg-indigo-100 border-indigo-300"
                         : "hover:bg-gray-50 border-gray-200"
                     }`}
-                    onClick={() => setSelectedConversation(convo)}
+                    onClick={() => {
+                      setSelectedConversation(convo);
+                      // join conversation room via socket
+                      const socket = socketRef.current;
+                      if (socket) socket.emit("joinConversation", convo._id);
+                    }}
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
