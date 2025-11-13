@@ -1,49 +1,74 @@
 require("dotenv").config(); // Must be at the very top
-const SibApiV3Sdk = require("sib-api-v3-sdk");
+const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 
-console.log("✅ ENV DEBUG:");
-console.log("BREVO_API_KEY exists:", !!process.env.BREVO_API_KEY);
+console.log("✅ EMAIL CONFIG DEBUG:");
 console.log("EMAIL_USER:", process.env.EMAIL_USER);
-console.log("EMAIL_FROM_NAME:", process.env.EMAIL_FROM_NAME);
+console.log("EMAIL_PASS exists:", !!process.env.EMAIL_PASS);
+console.log("EMAIL_HOST:", process.env.EMAIL_HOST);
+console.log("EMAIL_PORT:", process.env.EMAIL_PORT);
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const DEFAULT_FROM_EMAIL = process.env.EMAIL_USER;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const EMAIL_HOST = process.env.EMAIL_HOST || "smtp.gmail.com";
+const EMAIL_PORT = parseInt(process.env.EMAIL_PORT || "587");
 const DEFAULT_FROM_NAME = process.env.EMAIL_FROM_NAME || "Campus Connect";
 
-if (!DEFAULT_FROM_EMAIL) {
+// Validate email config
+if (!EMAIL_USER || !EMAIL_PASS) {
   throw new Error(
-    "❌ EMAIL_USER is not set in .env. Please provide a verified Brevo sender email."
+    "❌ EMAIL_USER and EMAIL_PASS are required in .env. Please set them for nodemailer."
   );
 }
 
-// Brevo client setup
-const brevoClient = SibApiV3Sdk.ApiClient.instance;
-brevoClient.authentications["api-key"].apiKey = BREVO_API_KEY;
-const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
+// Create nodemailer transporter
+const transporter = nodemailer.createTransport({
+  host: EMAIL_HOST,
+  port: EMAIL_PORT,
+  secure: EMAIL_PORT === 465, // true for 465, false for other ports
+  auth: {
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
+  },
+});
 
-async function sendEmailWithBrevo({ fromEmail = DEFAULT_FROM_EMAIL, fromName = DEFAULT_FROM_NAME, to, subject, html }) {
-  if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY not configured");
+// Test transporter connection on startup
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("❌ SMTP connection error:", error.message);
+  } else {
+    console.log("✅ SMTP transporter ready");
+  }
+});
 
-  console.log(`📤 Attempting to send email:
+async function sendEmailWithNodemailer({
+  fromEmail = EMAIL_USER,
+  fromName = DEFAULT_FROM_NAME,
+  to,
+  subject,
+  html,
+}) {
+  console.log(`📤 Attempting to send email via nodemailer:
   From: ${fromEmail} (${fromName})
   To: ${to}
   Subject: ${subject}`);
 
-  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail({
-    sender: { email: fromEmail, name: fromName },
-    to: [{ email: to }],
-    subject,
-    htmlContent: html,
-  });
-
   try {
-    const result = await emailApi.sendTransacEmail(sendSmtpEmail);
-    console.log(`✅ Email sent successfully to ${to}`);
-    return result;
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to,
+      subject,
+      html,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log(
+      `✅ Email sent successfully to ${to}. Message ID: ${result.messageId}`
+    );
+    return true;
   } catch (error) {
-    console.error("❌ Error sending email via Brevo:");
-    console.error(error?.response?.body || error?.message || error);
+    console.error("❌ Error sending email via nodemailer:");
+    console.error(error?.message || error);
     return false;
   }
 }
@@ -71,7 +96,7 @@ const sendOTPEmail = async (email, otp) => {
     </div>
   `;
 
-  return await sendEmailWithBrevo({
+  return await sendEmailWithNodemailer({
     to: email,
     subject: "Campus Connect - Email Verification OTP",
     html,
@@ -82,7 +107,9 @@ const sendOTPEmail = async (email, otp) => {
 // Send Password Reset Email
 // ================================
 const sendPasswordResetEmail = async (email, resetToken) => {
-  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`;
+  const resetUrl = `${
+    process.env.FRONTEND_URL || "http://localhost:5173"
+  }/reset-password?token=${resetToken}`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #4F46E5;">Campus Connect</h2>
@@ -97,7 +124,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
     </div>
   `;
 
-  return await sendEmailWithBrevo({
+  return await sendEmailWithNodemailer({
     to: email,
     subject: "Campus Connect - Password Reset",
     html,
@@ -111,4 +138,60 @@ module.exports = {
   generateOTP,
   sendOTPEmail,
   sendPasswordResetEmail,
+  // Best-effort email for new chat
+  sendNewChatEmail: async (receiverUserId, buyerName) => {
+    try {
+      const User = require("../models/User");
+      const user = await User.findById(receiverUserId);
+      if (!user || !user.email) return;
+      const html = `<p>Hi ${user.name || "there"},</p>
+             <p><strong>${buyerName}</strong> just texted you on Campus Connect.</p>
+             <p><a href="${
+               process.env.FRONTEND_URL || "http://localhost:5173"
+             }/messages" target="_blank">Open messages</a> to view and accept the chat request.</p>`;
+      await sendEmailWithNodemailer({
+        to: user.email,
+        subject: "New message request on Campus Connect",
+        html,
+      });
+    } catch (e) {
+      console.error("sendNewChatEmail error:", e?.message || e);
+    }
+  },
+  // Send rejection email when item is sold to someone else
+  sendRequestRejectedEmail: async (userId, listingTitle, sellerName) => {
+    try {
+      const User = require("../models/User");
+      const user = await User.findById(userId);
+      if (!user || !user.email) return;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #4F46E5;">Campus Connect</h2>
+          <h3 style="color: #DC2626;">Request Rejected</h3>
+          <p>Hi ${user.name || "there"},</p>
+          <p>We're sorry to inform you that your request for <strong>"${listingTitle}"</strong> has been rejected.</p>
+          <p>The item has been sold to another buyer by <strong>${sellerName}</strong>.</p>
+          <p>Don't worry! You can continue browsing and find similar items on our marketplace.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${
+              process.env.FRONTEND_URL || "http://localhost:5173"
+            }/dashboard" 
+               style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+              Browse More Items
+            </a>
+          </div>
+          <hr style="margin: 20px 0;">
+          <p style="color: #6B7280; font-size: 12px;">Campus Connect - Student Marketplace</p>
+        </div>
+      `;
+      await sendEmailWithNodemailer({
+        to: user.email,
+        subject: "Request Rejected - Item Sold to Another Buyer",
+        html,
+      });
+    } catch (error) {
+      console.error("Error sending rejection email:", error?.message || error);
+    }
+  },
 };

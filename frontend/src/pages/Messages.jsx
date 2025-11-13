@@ -21,6 +21,7 @@ const Messages = () => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [markingSold, setMarkingSold] = useState(false);
   const [confirmingSale, setConfirmingSale] = useState(false);
   const [rating, setRating] = useState(0);
@@ -32,6 +33,7 @@ const Messages = () => {
   });
   const [submittingReport, setSubmittingReport] = useState(false);
   const socketRef = useRef(null);
+  const [unreadMap, setUnreadMap] = useState({}); // conversationId -> boolean
 
   const reportTypes = [
     { value: "inappropriate_product", label: "Inappropriate Product" },
@@ -133,7 +135,33 @@ const Messages = () => {
               msg.conversation || msg.conversationId || selectedConversation._id
             )
         ) {
-          setMessages((m) => [...m, msg]);
+          setMessages((prev) => {
+            // Replace optimistic temp message if exists (match by sender+content)
+            const tempIndex = prev.findIndex(
+              (pm) =>
+                String(pm._id).startsWith("temp-") &&
+                String(pm.sender || pm.sender?._id) ===
+                  String(msg.sender || msg.sender?._id) &&
+                pm.content === msg.content
+            );
+            if (tempIndex !== -1) {
+              const copy = [...prev];
+              copy[tempIndex] = msg;
+              return copy;
+            }
+            return [...prev, msg];
+          });
+          // clear unread marker for this conversation
+          if (convId) {
+            setUnreadMap((u) => {
+              const copy = { ...(u || {}) };
+              delete copy[convId];
+              return copy;
+            });
+          }
+        } else if (convId) {
+          // mark as unread for conversations not currently open
+          setUnreadMap((u) => ({ ...(u || {}), [convId]: true }));
         }
 
         // Update conversation list lastMessageAt and order
@@ -236,6 +264,12 @@ const Messages = () => {
           token
         );
         setMessages(msgs);
+        // clear unread marker for this convo
+        setUnreadMap((u) => {
+          const copy = { ...(u || {}) };
+          delete copy[selectedConversation._id];
+          return copy;
+        });
       } catch (err) {
         console.error("Failed to load messages:", err);
         toast.error("Failed to load messages.");
@@ -249,41 +283,46 @@ const Messages = () => {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedConversation) return;
+    // Optimistic send: append a temp message and rely on socket to sync
+    const receiver = selectedConversation.participants.find(
+      (p) => p._id !== user?.id && p?._id !== user?._id
+    );
+    if (!receiver) {
+      toast.error("Invalid conversation");
+      return;
+    }
 
-    setLoading(true);
+    const tempMessage = {
+      _id: `temp-${Date.now()}`,
+      sender: user._id || user.id,
+      receiver: receiver._id || receiver.id,
+      content: newMessage,
+      listing: selectedConversation.listing?._id,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Append locally for instant feedback
+    setMessages((m) => [...m, tempMessage]);
+    setNewMessage("");
+    setSending(true);
+
     try {
-      const receiver = selectedConversation.participants.find(
-        (p) => p._id !== user?.id && p?._id !== user?._id
-      );
-      if (!receiver) {
-        toast.error("Invalid conversation");
-        return;
-      }
-
       await sendMessage(
         {
           receiver: receiver._id || receiver.id,
-          content: newMessage,
+          content: tempMessage.content,
           conversationId: selectedConversation._id,
           listing: selectedConversation.listing?._id,
         },
         token
       );
-
-      setNewMessage("");
-      toast.success("Message sent!");
-
-      // Refresh messages
-      const msgs = await getMessages(
-        receiver._id || receiver.id,
-        selectedConversation.listing?._id,
-        token
-      );
-      setMessages(msgs);
+      // Do not re-fetch; socket will push the authoritative message
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to send message.");
+      // remove optimistic message on failure
+      setMessages((m) => m.filter((msg) => msg._id !== tempMessage._id));
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   };
 
@@ -445,10 +484,12 @@ const Messages = () => {
               {conversations.map((convo) => {
                 const otherUser = getOtherParticipant(convo);
                 const isPending = convo.status === "pending";
+                // handle initiatedBy being populated or just an id
+                const initiatedById =
+                  convo.initiatedBy?._id || convo.initiatedBy;
                 const canAccept =
                   isPending &&
-                  String(convo.initiatedBy) !== String(user?.id) &&
-                  String(convo.initiatedBy) !== String(user?._id);
+                  String(initiatedById) !== String(user?.id || user?._id);
 
                 return (
                   <li
@@ -495,6 +536,13 @@ const Messages = () => {
                               minute: "2-digit",
                             })}
                           </p>
+                        )}
+                        {/* Unread indicator (green dot) */}
+                        {unreadMap[convo._id] && (
+                          <span
+                            className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full"
+                            title="New message"
+                          />
                         )}
                       </div>
                     </div>
@@ -701,10 +749,11 @@ const Messages = () => {
                   disabled={
                     !selectedConversation ||
                     !newMessage.trim() ||
-                    selectedConversation.status !== "accepted"
+                    selectedConversation.status !== "accepted" ||
+                    sending
                   }
                 >
-                  Send
+                  {sending ? "Sending..." : "Send"}
                 </button>
               </form>
             </>
